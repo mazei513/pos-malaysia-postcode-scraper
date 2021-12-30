@@ -71,9 +71,17 @@ func main() {
 
 	log := logger{*quiet}
 
-	err := os.MkdirAll(cachePath, 0777)
+	home, err := os.UserHomeDir()
 	if err != nil {
-		fmt.Println("make cache folder: ", err)
+		fmt.Println("home dir: ", err)
+		os.Exit(1)
+	}
+
+	cache := cacheManager{path.Join(home, cachePath)}
+
+	err = cache.init()
+	if err != nil {
+		fmt.Println("init cache: ", err)
 		os.Exit(1)
 	}
 
@@ -81,7 +89,7 @@ func main() {
 	for i := *start; i <= *end; i = i + *step {
 		pc := fmt.Sprintf("%05d", i)
 
-		ars, err := getCachedResponse(pc)
+		ars, err := cache.get(pc)
 		if *ignoreCache || err != nil {
 			log.println("Fetching for", pc)
 			u := fmt.Sprintf("https://api.pos.com.my/PostcodeWebApi/api/Postcode?Postcode=%s", pc)
@@ -100,7 +108,7 @@ func main() {
 				os.Exit(1)
 			}
 
-			err = cacheResponse(pc, ars)
+			err = cache.set(pc, ars)
 			if err != nil {
 				fmt.Println("cacheResponse: ", err)
 				os.Exit(1)
@@ -145,8 +153,16 @@ func main() {
 	log.println("stored in", *out)
 }
 
-func getCachedResponse(postcode string) ([]apiResponse, error) {
-	b, err := os.ReadFile(path.Join(cachePath, postcode))
+type cacheManager struct {
+	path string
+}
+
+func (c cacheManager) init() error {
+	return os.MkdirAll(c.path, 0777)
+}
+
+func (c cacheManager) get(postcode string) ([]apiResponse, error) {
+	b, err := os.ReadFile(path.Join(c.path, postcode))
 	if err != nil {
 		return nil, err
 	}
@@ -158,13 +174,13 @@ func getCachedResponse(postcode string) ([]apiResponse, error) {
 	return res, nil
 }
 
-func cacheResponse(postcode string, a []apiResponse) error {
+func (c cacheManager) set(postcode string, a []apiResponse) error {
 	b, err := json.Marshal(a)
 	if err != nil {
 		return err
 	}
 
-	err = os.WriteFile(path.Join(cachePath, postcode), b, 0666)
+	err = os.WriteFile(path.Join(c.path, postcode), b, 0666)
 	if err != nil {
 		return err
 	}
