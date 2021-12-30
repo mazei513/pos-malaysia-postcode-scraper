@@ -19,19 +19,19 @@ type locations map[string]map[string]map[string]map[string]struct{}
 
 func (l locations) store(ar apiResponse) {
 	state := strings.TrimSpace(ar.State)
-	postcode := strings.TrimSpace(ar.Postcode)
 	city := strings.TrimSpace(ar.Post_Office)
+	postcode := strings.TrimSpace(ar.Postcode)
 	location := strings.TrimSpace(ar.Location)
 	if _, ok := l[state]; !ok {
 		l[state] = make(map[string]map[string]map[string]struct{})
 	}
-	if _, ok := l[state][postcode]; !ok {
-		l[state][postcode] = make(map[string]map[string]struct{})
+	if _, ok := l[state][city]; !ok {
+		l[state][city] = make(map[string]map[string]struct{})
 	}
-	if _, ok := l[state][postcode][city]; !ok {
-		l[state][postcode][city] = make(map[string]struct{})
+	if _, ok := l[state][city][postcode]; !ok {
+		l[state][city][postcode] = make(map[string]struct{})
 	}
-	l[state][postcode][city][location] = struct{}{}
+	l[state][city][postcode][location] = struct{}{}
 }
 
 func main() {
