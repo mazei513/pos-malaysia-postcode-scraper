@@ -21,16 +21,20 @@ type apiResponse struct {
 type locations map[string]map[string]map[string]map[string]struct{}
 
 func (l locations) store(ar apiResponse) {
-	if _, ok := l[ar.State]; !ok {
-		l[ar.State] = make(map[string]map[string]map[string]struct{})
+	state := strings.TrimSpace(ar.State)
+	postcode := strings.TrimSpace(ar.Postcode)
+	city := strings.TrimSpace(ar.Post_Office)
+	location := strings.TrimSpace(ar.Location)
+	if _, ok := l[state]; !ok {
+		l[state] = make(map[string]map[string]map[string]struct{})
 	}
-	if _, ok := l[ar.State][ar.Postcode]; !ok {
-		l[ar.State][ar.Postcode] = make(map[string]map[string]struct{})
+	if _, ok := l[state][postcode]; !ok {
+		l[state][postcode] = make(map[string]map[string]struct{})
 	}
-	if _, ok := l[ar.State][ar.Postcode][ar.Post_Office]; !ok {
-		l[ar.State][ar.Postcode][ar.Post_Office] = make(map[string]struct{})
+	if _, ok := l[state][postcode][city]; !ok {
+		l[state][postcode][city] = make(map[string]struct{})
 	}
-	l[ar.State][ar.Postcode][ar.Post_Office][strings.TrimSpace(ar.Location)] = struct{}{}
+	l[state][postcode][city][location] = struct{}{}
 }
 
 type exportCity struct {
@@ -145,7 +149,9 @@ func main() {
 		os.Exit(1)
 	}
 	defer f.Close()
-	err = json.NewEncoder(f).Encode(toExport)
+	enc := json.NewEncoder(f)
+	enc.SetEscapeHTML(false)
+	err = enc.Encode(toExport)
 	if err != nil {
 		fmt.Println("write output file:", err)
 		os.Exit(1)
