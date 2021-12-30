@@ -48,6 +48,15 @@ type exportState struct {
 	Postcodes []exportPostCode `json:"postcodes"`
 }
 
+type logger struct{ quiet bool }
+
+func (l logger) println(a ...interface{}) {
+	if l.quiet {
+		return
+	}
+	fmt.Println(a...)
+}
+
 const cachePath = ".pos-malaysia-postcode-scraper-cache"
 
 func main() {
@@ -57,7 +66,10 @@ func main() {
 	interval := flag.Duration("interval", 0, "interval between fetches")
 	out := flag.String("out", "all.json", "output file")
 	ignoreCache := flag.Bool("noCache", false, "if set, will ignore previous responses")
+	quiet := flag.Bool("q", false, "if set, will not print to stdout")
 	flag.Parse()
+
+	log := logger{*quiet}
 
 	err := os.MkdirAll(cachePath, 0777)
 	if err != nil {
@@ -71,7 +83,7 @@ func main() {
 
 		ars, err := getCachedResponse(pc)
 		if *ignoreCache || err != nil {
-			fmt.Println("Fetching for", pc)
+			log.println("Fetching for", pc)
 			u := fmt.Sprintf("https://api.pos.com.my/PostcodeWebApi/api/Postcode?Postcode=%s", pc)
 			resp, err := http.Get(u)
 			if err != nil {
@@ -94,7 +106,7 @@ func main() {
 				os.Exit(1)
 			}
 		} else {
-			fmt.Println("Found cached response for", pc)
+			log.println("Found cached response for", pc)
 		}
 
 		for _, ar := range ars {
@@ -130,6 +142,7 @@ func main() {
 		fmt.Println("write output file:", err)
 		os.Exit(1)
 	}
+	log.println("stored in", *out)
 }
 
 func getCachedResponse(postcode string) ([]apiResponse, error) {
