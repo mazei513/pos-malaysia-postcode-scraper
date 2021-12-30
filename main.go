@@ -34,21 +34,6 @@ func (l locations) store(ar apiResponse) {
 	l[state][postcode][city][location] = struct{}{}
 }
 
-type exportCity struct {
-	City      string   `json:"city"`
-	Locations []string `json:"locations"`
-}
-
-type exportPostCode struct {
-	Postcode string       `json:"postcode"`
-	Cities   []exportCity `json:"cities"`
-}
-
-type exportState struct {
-	State     string           `json:"state"`
-	Postcodes []exportPostCode `json:"postcodes"`
-}
-
 func main() {
 	start := flag.Int("start", 0, "starting point")
 	end := flag.Int("end", 99999, "end point")
@@ -57,6 +42,8 @@ func main() {
 	out := flag.String("out", "all.json", "output file")
 	ignoreCache := flag.Bool("noCache", false, "if set, will ignore previous responses")
 	quiet := flag.Bool("q", false, "if set, will not print to stdout")
+	excludeLocations := flag.Bool("noLocations", false, "if set, will exclude locations field")
+
 	flag.Parse()
 
 	log := logger{*quiet}
@@ -98,7 +85,11 @@ func main() {
 	}
 	defer exp.Close()
 
-	err = exp.exportLocations(details)
+	if *excludeLocations {
+		err = exp.exportWithoutLocations(details)
+	} else {
+		err = exp.export(details)
+	}
 	if err != nil {
 		fmt.Println("write output file:", err)
 		os.Exit(1)
