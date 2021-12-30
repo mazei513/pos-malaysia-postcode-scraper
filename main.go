@@ -1,9 +1,7 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"net/http"
@@ -21,16 +19,6 @@ type apiResponse struct {
 }
 
 type locations map[string]map[string]map[string]map[string]struct{}
-
-func (l locations) exists(postcode string) bool {
-	for _, pcs := range l {
-		_, ok := pcs[postcode]
-		if ok {
-			return true
-		}
-	}
-	return false
-}
 
 func (l locations) store(ar apiResponse) {
 	if _, ok := l[ar.State]; !ok {
@@ -68,7 +56,6 @@ func main() {
 	step := flag.Int("step", 1, "loop step")
 	interval := flag.Duration("interval", 0, "interval between fetches")
 	out := flag.String("out", "all.json", "output file")
-	ignoreSkipCache := flag.Bool("noSkipCache", false, "if set, will fetch previously found empty postcodes")
 	ignoreCache := flag.Bool("noCache", false, "if set, will ignore previous responses")
 	flag.Parse()
 
@@ -78,67 +65,43 @@ func main() {
 		os.Exit(1)
 	}
 
-	skips, err := getSkips()
-	if err != nil {
-		fmt.Println("getSkips: ", err)
-		os.Exit(1)
-	}
-
 	details := locations{}
-	if !*ignoreCache {
-		details, err = getCached()
-		if err != nil {
-			fmt.Println("getCached: ", err)
-			os.Exit(1)
-		}
-	}
-
 	for i := *start; i <= *end; i = i + *step {
 		pc := fmt.Sprintf("%05d", i)
-		if details.exists(pc) {
-			fmt.Println("Found previous fetch for", pc)
-			continue
-		}
-		if _, ok := skips[pc]; !*ignoreSkipCache && ok {
-			continue
-		}
 
-		fmt.Println("Fetching for", pc)
-		u := fmt.Sprintf("https://api.pos.com.my/PostcodeWebApi/api/Postcode?Postcode=%s", pc)
-		resp, err := http.Get(u)
-		if err != nil {
-			fmt.Println("fetch response: ", err)
-			os.Exit(1)
-		}
-
-		time.Sleep(*interval)
-
-		ars := []apiResponse{}
-		err = json.NewDecoder(resp.Body).Decode(&ars)
-		if err != nil {
-			fmt.Println("decode response", err)
-			os.Exit(1)
-		}
-
-		if len(ars) == 0 {
-			skips[pc] = struct{}{}
-			err := saveSkips(skips)
+		ars, err := getCachedResponse(pc)
+		if *ignoreCache || err != nil {
+			fmt.Println("Fetching for", pc)
+			u := fmt.Sprintf("https://api.pos.com.my/PostcodeWebApi/api/Postcode?Postcode=%s", pc)
+			resp, err := http.Get(u)
 			if err != nil {
-				fmt.Println("saveSkips: ", err)
+				fmt.Println("fetch response: ", err)
 				os.Exit(1)
 			}
-			continue
+
+			time.Sleep(*interval)
+
+			ars = []apiResponse{}
+			err = json.NewDecoder(resp.Body).Decode(&ars)
+			if err != nil {
+				fmt.Println("decode response", err)
+				os.Exit(1)
+			}
+
+			err = cacheResponse(pc, ars)
+			if err != nil {
+				fmt.Println("cacheResponse: ", err)
+				os.Exit(1)
+			}
+		} else {
+			fmt.Println("Found cached response for", pc)
 		}
 
 		for _, ar := range ars {
 			details.store(ar)
 		}
-		err = saveCache(details)
-		if err != nil {
-			fmt.Println("saveCache: ", err)
-			os.Exit(1)
-		}
 	}
+
 	toExport := []exportState{}
 	for state, ps := range details {
 		s := exportState{State: state}
@@ -169,43 +132,12 @@ func main() {
 	}
 }
 
-func getSkips() (map[string]struct{}, error) {
-	b, err := os.ReadFile(path.Join(cachePath, "skips"))
-	res := map[string]struct{}{}
+func getCachedResponse(postcode string) ([]apiResponse, error) {
+	b, err := os.ReadFile(path.Join(cachePath, postcode))
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return res, nil
-		}
 		return nil, err
 	}
-	for _, p := range bytes.Split(b, []byte(",")) {
-		res[string(p)] = struct{}{}
-	}
-	return res, nil
-}
-
-func saveSkips(skips map[string]struct{}) error {
-	b := [][]byte{}
-	for s := range skips {
-		b = append(b, []byte(s))
-	}
-
-	err := os.WriteFile(path.Join(cachePath, "skips"), bytes.Join(b, []byte(",")), 0666)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func getCached() (locations, error) {
-	b, err := os.ReadFile(path.Join(cachePath, "cache.json"))
-	res := locations{}
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return res, nil
-		}
-		return nil, err
-	}
+	res := []apiResponse{}
 	err = json.Unmarshal(b, &res)
 	if err != nil {
 		return nil, err
@@ -213,13 +145,13 @@ func getCached() (locations, error) {
 	return res, nil
 }
 
-func saveCache(l locations) error {
-	b, err := json.Marshal(l)
+func cacheResponse(postcode string, a []apiResponse) error {
+	b, err := json.Marshal(a)
 	if err != nil {
 		return err
 	}
 
-	err = os.WriteFile(path.Join(cachePath, "cache.json"), b, 0666)
+	err = os.WriteFile(path.Join(cachePath, postcode), b, 0666)
 	if err != nil {
 		return err
 	}
